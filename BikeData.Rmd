@@ -1,0 +1,119 @@
+
+```{r, echo=FALSE,include=FALSE}
+
+library(ggplot2)
+library(lubridate)
+library(plyr)
+```
+
+```{r, echo=FALSE,cache=TRUE}
+f <- "201402_station_data.csv"
+
+if(!file.exists(f)){
+        ## Data will to be downloaded the file to a temp directory.
+        url <- "https://s3.amazonaws.com/trackerdata/201402_babs_open_data.zip"
+        td <- tempdir()
+        temp <- tempfile(tmpdir=td, fileext=".zip")
+        download.file(url, temp)
+        
+        ##unzip the zip folder to the wd and delete temp data
+        unzip(temp)
+        unlink(temp)
+        
+        rm(temp, td, url)
+}
+
+## import data
+
+station <- read.csv(f, header = TRUE, sep=",")
+trip <- read.csv("201402_trip_data.csv", header = TRUE, sep=",")
+weather <-  read.csv("201402_weather_data.csv", header = TRUE, sep=",")
+
+rm(f)
+
+##Combine data into data frame and reformat dates
+
+Data <- merge(trip, station, by.x = "Start.Terminal", by.y = "station_id")
+Data$Start.Date <- as.POSIXct(strptime(Data$Start.Date,"%m/%d/%Y"))
+Data$End.Date <- as.POSIXct(strptime(Data$End.Date,"%m/%d/%Y"))
+#Data<- data.frame(Data, wday(Data$Start.Date, label = TRUE))
+#names(Data)[18] <- "Wday"
+
+rides_by_station <- count(Data, vars=c("Start.Station", "landmark"))
+rides_by_station <- arrange(rides_by_station, desc(freq))
+rides_by_station <- rides_by_station[1:10,]
+
+stations_by_landmark <- count(station, vars="landmark")
+stations_by_landmark <- arrange(stations_by_landmark, desc(freq))
+names(stations_by_landmark) <- c("City","Stations")
+
+Use_by_day <- count(Data,vars="Start.Date")
+top_day <- arrange(Use_by_day, desc(freq))
+
+cities <- stations_by_landmark$City
+
+weather$Date <- as.POSIXct(strptime(weather$Date,"%m/%d/%Y"))
+WData <- merge(x=Data, y=weather, by.x = c("Start.Date","Zip.Code"), by.y =c("Date","zip"))
+W_by_day <- count(WData,vars="Mean_Temperature_F")
+W_top <- arrange(W_by_day, desc(freq))
+
+```
+
+##The Bay Area Bike Share
+
+Bay Area Bike Share allows customers and subscribers the option to rent a bike from several locations throughout the Bay Area. 
+
+There are `r nrow(station)` stations located in `r cities`. The most stations are located in `r stations_by_landmark[1,1]` with `r stations_by_landmark[1,2]` bike stations. Here is a list of the all the stations per city:
+
+```{r, echo=FALSE}
+head(stations_by_landmark)
+
+```
+
+
+The station that has the top number of riders each day is `r rides_by_station[1,1]`, located in `r rides_by_station[1,2]`, with `r rides_by_station[1,3]` riders. The top ten stations by total number of riders are shown in the below:
+
+```{r, echo=FALSE}
+lab <- rides_by_station$Start.Station
+par(mar=c(8.1,4.1,4.1,2.1))
+
+barplot(rides_by_station$freq, xlab = "", ylab = "Rides", 
+        cex.names=0.7, cex.axis=0.7, las = 2, cex.lab=0.8, 
+        col = rides_by_station$landmark, lwd = 1, 
+        legend = unique(rides_by_station$landmark))
+text(x = seq(1, 11.8, by=1.2), par("usr")[3] - 0.2, labels = lab, 
+     srt = 45, pos = 2, xpd = TRUE, cex=0.6)
+
+```
+
+
+The day with the least rides starting was `r as.Date(top_day[nrow(top_day),1])` with `r top_day[nrow(top_day),2]` rides and the day with most rides starting was `r as.Date(top_day[1,1])` with `r top_day[1,2]` rides.
+
+
+```{r,echo=FALSE}
+
+par(mar=c(5.1,4.1,4.1,2.1))
+
+plot(x=Use_by_day$Start.Date, y = Use_by_day$freq, type="l", xlab = "", ylab="Number of rides") 
+
+abline(lm(freq ~ ., data = Use_by_day), col="red")
+
+```
+
+When it is too cold or too hot people are not willing to use the Bike Share. The usage of bikes per temperature creates a bell curve with the maximum start at `r W_top[1,1]` degrees (`r W_top[1,2]` rides).
+
+```{r, echo=FALSE}
+
+hist(x=WData$Mean_Temperature_F, xlab = "Mean Temperature", ylab="Number of rides", main ="", col = "Purple")  
+
+```
+
+
+
+
+
+
+This analysis was created from open data for August 2013 - February 2014 provided by Bay Area Bike Share at http://www.bayareabikeshare.com/datachallenge
+
+Data and Rmd file to reproduce results can be found at https://github.com/mck3939/BayAreaBikeShare.git
+
